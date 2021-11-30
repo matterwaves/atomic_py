@@ -106,7 +106,7 @@ class magneticCoil():
         assert np.shape(displacement) == np.shape(np.array([0,0]))
         self.origin+=np.array(displacement)
 
-    def field(self,r,z):
+    def field(self,x,y,z):
         """
         magnetic field due to the coil, when current I passes thru it
         r = [meters]
@@ -115,10 +115,15 @@ class magneticCoil():
         fully vectorized!
         """
         ## Make sure all inputs are arrays to avoid index issues
-        if type(r) != type(np.array([])):
-            r=np.array(r).astype(np.float64)
+        if type(x) != type(np.array([])):
+            x=np.array(x).astype(np.float64)
+        if type(y) != type(np.array([])):
+            y=np.array(y).astype(np.float64)
         if type(z) != type(np.array([])):
             z=np.array(z).astype(np.float64)
+
+        ## Transform from cartesian to cylindrical coordinates
+        r=sqrt(x**2+y**2)
 
         ## Shift r,z coordinates relative to loop origing
         r0 = r-self.origin[0]
@@ -150,7 +155,13 @@ class magneticCoil():
             Br=B0/(pi*sqrt(Q))*(z0/r_reg)*( E(m)*(1+r0**2+z0**2)/(Q-4*r0)-K(m))
             ## force B_r=0 on axis
             Br[reg_idx]=0
-        return Br,Bz ## Gauss
+
+        ##Transform back to cartesian coordinates
+        ## x/r = cos(theta), y/r = sin(theta)
+        Bx=Br*x/r
+        By=Br*y/r
+        return Bx,By,Bz # Gauss
+        #return Br,Bz ## Gauss
 
     def fieldOnAxis(self,z):
         """
@@ -189,7 +200,8 @@ class coilSystem():
         for coil in self.coils:
             assert type(coil)==type(magneticCoil()), "All coils must be of type magneticCoil"
         self.r_range,self.z_range=(-1,1,40),(-1,1,40)
-        self.rs,self.zs=np.meshgrid(np.linspace(*self.r_range),np.linspace(*self.z_range))
+        #self.rs,self.zs=np.meshgrid(np.linspace(*self.r_range),np.linspace(*self.z_range))
+        self.xs,self.ys,self.zs=np.meshgrid(np.linspace(*self.r_range),np.linspace(*self.r_range),np.linspace(*self.z_range))
         return
 
     def __add__(self,other):
@@ -203,23 +215,37 @@ class coilSystem():
         return string
     def __str__(self):
         return self.__repr__()
-    def field(self,r,z):
-        return sum([np.array(coil.field(r,z)) for coil in self.coils])
+    def field(self,*coords):
+        return sum([np.array(coil.field(*coords)) for coil in self.coils])
 
-    def setROI(self,r_range=(-1,1,40),z_range=(-1,1,40)):
+    def setROI(self,r_range=(-1,1,40j),z_range=(-1,1,40j)):
         self.r_range=r_range
         self.z_range=z_range
-        self.rs,self.zs=np.meshgrid(np.linspace(*self.r_range),np.linspace(*self.z_range))
+        #self.rs,self.zs=np.meshgrid(np.linspace(*self.r_range),np.linspace(*self.z_range))
+        self.xs,self.ys,self.zs=np.mgrid[slice(*self.r_range),slice(*self.r_range),slice(*self.z_range)]
 
     def view(self):
-        Br,Bz=self.field(self.rs,self.zs)
-        mag=sqrt(Br**2+Bz**2)
+
+        Bx,By,Bz=self.field(self.xs,self.ys,self.zs)
+
+        ## Take a cross-section for viewing
+        mask=self.ys==np.min(np.abs(self.ys))
+        middle_idx=int(np.shape(self.xs)[0]/2)
+
+        Bx=Bx[middle_idx,:,:]
+        By=By[middle_idx,:,:]
+        Bz=Bz[middle_idx,:,:]
+        zs,ys=self.zs[middle_idx,:,:],self.ys[middle_idx,:,:]
+
+        mag=sqrt(Bx**2+By**2+Bz**2)
+
         fig=plt.figure()
         ax=fig.add_subplot(111)
-
-        ax.streamplot(self.rs,self.zs,Br,Bz,density=1.5,color=mag)
-        ax.set(xlim=(self.rs.min(),self.rs.max() ), ylim=(self.zs.min(),self.zs.max()) )
+        ## Plotting in terms of z,y because of streamplot indexing requiremens
+        ax.streamplot(zs,ys,Bz,By,density=1.5,color=mag)
+        ax.set(xlim=(ys.min(),ys.max() ), ylim=(ys.min(),zs.max()) )
         plt.show()
+        return
 
 
     def gradient(self):
@@ -232,18 +258,20 @@ class coilSystem():
             Evaluated at the field minimum
         """
 
-        Br,Bz=self.field(self.rs,self.zs)
-        mag=sqrt(Br**2+Bz**2)
+        Bx,By,Bz=self.field(self.xs,self.ys,self.zs)
+        mag=sqrt(Bx**2+By**2+Bz**2)
         min_idx=np.unravel_index(np.argmin(mag),np.shape(mag))
 
-        print(f"Field minimum @ r={self.rs[min_idx]}, z={self.zs[min_idx]}")
-        dr,dz=self.rs[0,1]-self.rs[0,0],self.zs[1,0]-self.zs[0,0]
-        Grad_Br=np.gradient(Br,dz,dr)
-        Grad_Bz=np.gradient(Bz,dz,dr)
-        Grad_B=np.array([[Grad_Br[1][min_idx],Grad_Br[0][min_idx]],
-                    [Grad_Bz[1][min_idx],Grad_Bz[0][min_idx]]]) ## Gauss/meter
+        print(f"Field minimum @ x={self.xs[min_idx]},y={self.ys[min_idx]}, z={self.zs[min_idx]}")
+        dx,dy,dz=self.xs[0,1,0]-self.xs[0,0,0],self.ys[1,0,0]-self.ys[0,0,0], self.zs[0,0,1]-self.zs[0,0,0]
+        Grad_Bx=np.gradient(Bx,dy,dx,dz)
+        Grad_By=np.gradient(By,dy,dx,dz)
+        Grad_Bz=np.gradient(Bz,dy,dx,dz)
+        return Grad_Bx[min_idx], Grad_By[min_idx], Grad_Bz[min_idx]
+        #Grad_B=np.array([[Grad_Br[1][min_idx],Grad_Br[0][min_idx]],
+        #            [Grad_Bz[1][min_idx],Grad_Bz[0][min_idx]]]) ## Gauss/meter
 
-        return Grad_B/100 # Gauss/cm
+        #return Grad_B/100 # Gauss/cm
 
 
 
