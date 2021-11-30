@@ -77,7 +77,7 @@ class magneticCoil():
     """
     mu0=1.25663706212e-6#N/A^2
 
-    def __init__(self,diameter=1,turns=1,current=1,origin=np.array([0,0])):
+    def __init__(self,diameter=1,turns=1,current=1,origin=np.array([0,0,0])):
         """
         diameter [meters]
         turns [number]
@@ -87,7 +87,7 @@ class magneticCoil():
         assert diameter >0 , "Diameter must be positive"
         assert type(turns) == int, "turns must be an integer"
         origin=np.array(origin)
-        assert np.shape(origin)==np.shape(np.array([0,0]))
+        assert np.shape(origin)==np.shape(np.array([0,0,0]))
         self.diameter=diameter
         self.turns=turns
         self.current=current
@@ -101,9 +101,9 @@ class magneticCoil():
 
     def __str__(self):
         return self.__repr__()
-    def shift(self,displacement=[0,0]):
+    def shift(self,displacement=[0,0,0]):
         displacement=np.array(displacement)
-        assert np.shape(displacement) == np.shape(np.array([0,0]))
+        assert np.shape(displacement) == np.shape(np.array([0,0,0]))
         self.origin+=np.array(displacement)
 
     def field(self,x,y,z):
@@ -123,14 +123,11 @@ class magneticCoil():
             z=np.array(z).astype(np.float64)
 
         ## Transform from cartesian to cylindrical coordinates
-        r=sqrt(x**2+y**2)
-
         ## Shift r,z coordinates relative to loop origing
-        r0 = r-self.origin[0]
-        z0 = z-self.origin[1]
+        r=sqrt((x-self.origin[0])**2+(y-self.origin[1])**2)
         ## Convert from meters to units of loop radius
-        r0=2*r0/self.diameter
-        z0=2*z0/self.diameter
+        r0=2*r/self.diameter
+        z0=2*(z-self.origin[2])/self.diameter
 
         ## Define useful constants
         I=self.turns*self.current
@@ -243,7 +240,7 @@ class coilSystem():
         ax=fig.add_subplot(111)
         ## Plotting in terms of z,y because of streamplot indexing requiremens
         ax.streamplot(zs,ys,Bz,By,density=1.5,color=mag)
-        ax.set(xlim=(ys.min(),ys.max() ), ylim=(ys.min(),zs.max()) )
+        ax.set(xlim=(ys.min(),ys.max() ), ylim=(ys.min(),zs.max()),xlabel="Z (m)", ylabel="Y (m)" )
         plt.show()
         return
 
@@ -252,29 +249,54 @@ class coilSystem():
         """
         Br,Bz in Gauss
         r,z in meters
-        Return [[Brr, Brz],
-                [Bzr, Bzz]]
+        Return [[Bxx, Bxy, Bxz],
+                [Byx, Byy, Byz],
+                [Bzx, Bzy, Bzz]]
             in Gauss/meter
             Evaluated at the field minimum
+
+        Matrix should be traceless and antisymmetric
         """
 
         Bx,By,Bz=self.field(self.xs,self.ys,self.zs)
         mag=sqrt(Bx**2+By**2+Bz**2)
         min_idx=np.unravel_index(np.argmin(mag),np.shape(mag))
+        print(min_idx)
 
-        print(f"Field minimum @ x={self.xs[min_idx]},y={self.ys[min_idx]}, z={self.zs[min_idx]}")
-        dx,dy,dz=self.xs[0,1,0]-self.xs[0,0,0],self.ys[1,0,0]-self.ys[0,0,0], self.zs[0,0,1]-self.zs[0,0,0]
-        Grad_Bx=np.gradient(Bx,dy,dx,dz)
-        Grad_By=np.gradient(By,dy,dx,dz)
-        Grad_Bz=np.gradient(Bz,dy,dx,dz)
-        return Grad_Bx[min_idx], Grad_By[min_idx], Grad_Bz[min_idx]
-        #Grad_B=np.array([[Grad_Br[1][min_idx],Grad_Br[0][min_idx]],
-        #            [Grad_Bz[1][min_idx],Grad_Bz[0][min_idx]]]) ## Gauss/meter
+        print(f"Field minimum @ x={self.xs[min_idx]:.3f},y={self.ys[min_idx]:.3f}, z={self.zs[min_idx]:.3f}")
+        print(f"B={mag[min_idx]:.2f} Gauss ")
 
-        #return Grad_B/100 # Gauss/cm
+        dx,dy,dz=self.xs[1,0,0]-self.xs[0,0,0],self.ys[0,1,0]-self.ys[0,0,0], self.zs[0,0,1]-self.zs[0,0,0]
+        Grad_Bx=np.array(np.gradient(Bx,dy,dx,dz))
+        Grad_By=np.array(np.gradient(By,dy,dx,dz))
+        Grad_Bz=np.array(np.gradient(Bz,dy,dx,dz))
 
 
 
+        Grad_B= np.vstack((
+            Grad_Bx[(slice(None),*min_idx)],
+            Grad_By[(slice(None),*min_idx)],
+            Grad_Bz[(slice(None),*min_idx)])
+            )
+        return Grad_B/100 ## Gauss/cm
+
+    def symmetry_check(self, Grad_B):
+        """
+        Grad_B should be traceless and antisymmetric
+        """
+
+        ## compute the mean abs eigenvalues
+        ## to provide a size scale to compare against
+        eigs,_= np.linalg.eig(Grad_B)
+        size=sum(np.abs(eigs))/3
+
+        trace_err=np.trace(Grad_B)/size
+        symm_eigs,_=np.linalg.eig( Grad_B-Grad_B.transpose()  )
+        symm_err=sum(np.abs(symm_eigs))/(3*size)
+
+        print(f"Relative trace error: {trace_err:.2E}")
+        print(f"Relative symmetry error: {symm_err:.2E}")
+        return {"symm_error": symm_err, "trace_error":trace_err}
 
 class mot():
     """
