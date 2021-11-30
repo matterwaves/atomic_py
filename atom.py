@@ -41,6 +41,8 @@ class fine_manifold():
         for F in self.Fs[::-1]:
             string+=repr(getattr(self,"F"+str(F)))+"\n"
         return string
+    def __str__(self):
+        return self.__repr__()
 
     def term_symbol(self,L,S,J):
         L_list=["S","P","D","F","G","H"]
@@ -68,6 +70,8 @@ class hyperfine_manifold():
         return
     def __repr__(self):
         return "F={}  {:.1f} MHz  ({:.2f}  MHz/G)".format(self.F,self.center,self.B_shift)
+    def __str__(self):
+        return self.__repr__()
 
 class transition():
 
@@ -96,11 +100,13 @@ class transition():
         lines=str(self.F_FF_angle).split("\n")
         lines[0]+= "     *"+str(self.J_JJ)
         body=""
-        for line,label in zip(lines, ["F="+str(F)+"\t" for F in self.final.Fs]):
+        for line,label in zip(lines, ["F="+str(F)+"\t" for F in self.initial.Fs]):
             body+= label+line+"\n"
         F_FF_string=header+body
 
         return F_FF_string
+    def __str__(self):
+        return self.__repr__()
 
     def compute_F_FF(self):
         ## hyperfine reduced matrix elements, <F||eR||FF> satisfy
@@ -228,6 +234,8 @@ class cesium():
         for state in self.fine_states[::-1]:
             string+= repr(state)+"\n"*5
         return string.rstrip("\n")
+    def __str__(self):
+        return self.__repr__()
 
 class rubidium87():
     def __init__(self):
@@ -258,3 +266,5 @@ class rubidium87():
         for state in self.fine_states[::-1]:
             string+= repr(state)+"\n"*5
         return string.rstrip("\n")
+    def __str__(self):
+        return self.__repr__()
