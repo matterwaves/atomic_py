@@ -23,19 +23,49 @@ class laser():
         self.polarization=polarization
         self.direction=direction/np.linalg.norm(direction)
 
+    def __repr__(self):
+        string=f"Intensity={self.intensity:.2f} mW/cm^2\n"
+        string+=f"helicity={self.polarization}\n"
+        string+=f"direction={np.array2string(self.direction,precision=2)}\n"
+        return string
+    def __str__(self):
+        return self.__repr__()
 
-    def reflect(self):
+
+    def reflect(self,reflectivity=1,normal_direction=[1,0,0]):
         """
         Reflect a laser off an ordinary mirror,
         requires mirror angle (relative to laser direction)
         returns a new laser object representing the reflected beam
         """
+        assert reflectivity>0 and reflectivity<=1, "Reflectivity must be between 0 and 1"
+        assert np.shape(normal_direction)==np.shape(np.array([0,0,0])), "direction must be a 3-vector"
+        normal_direction=normal_direction/np.linalg.norm(normal_direction)
 
-    def diffract(self):
+        # Invert the vector component which is normal to the mirror surface
+        normal_component=np.dot(self.direction,normal_direction)*normal_direction
+        reflected_direction=self.direction-2*normal_component
+
+        return laser(self.intensity*reflectivity,polarization=self.polarization*-1,direction=reflected_direction)
+
+    def diffract(self,efficiency=[0,1],bragg_direction=[1,0,0]):
         """
         Same as reflection, except there is an angle-dependent intensity increase
         returns a new laser object representing the diffracted beam
+        Assume that the beam is at normal incidence to the diffraction grating
         """
+        assert np.shape(bragg_direction)==np.shape(np.array([0,0,0])), "direction must be a 3-vector"
+        bragg_direction=bragg_direction/np.linalg.norm(bragg_direction)
+        ## zero order diffraction looks like a mirror at normal incidence, with low reflectivity
+        order0=self.reflect(efficiency[0],normal_direction=self.direction)
+
+        ## Bragg angle is twice the effective angle of incidence
+        bragg_angle=2*np.arcsin(sqrt(1-np.dot( self.direction,bragg_direction)**2 ))
+
+        ## First order diffraction has the angle-dependent intensity boost
+        order1=self.reflect(efficiency[1]/sin(bragg_angle),normal_direction=bragg_direction)
+
+        return order0,order1
 
     def gain(self,gain):
         self.intensity*=gain
@@ -69,6 +99,8 @@ class magneticCoil():
         string+=f"\n origin: {self.origin}"
         return string
 
+    def __str__(self):
+        return self.__repr__()
     def shift(self,displacement=[0,0]):
         displacement=np.array(displacement)
         assert np.shape(displacement) == np.shape(np.array([0,0]))
@@ -169,6 +201,8 @@ class coilSystem():
             string+=repr(coil)
             string+="\n"
         return string
+    def __str__(self):
+        return self.__repr__()
     def field(self,r,z):
         return sum([np.array(coil.field(r,z)) for coil in self.coils])
 
@@ -221,6 +255,94 @@ class mot():
     The magnetic term is determined by the laser power, geometry, polarization, and applied field profile
     """
 
-    def __init__(self,lasers):
-        pass
+    def __init__(self,coils,lasers,transition,detuning=10):
+        self.coils=coils
+        self.lasers=lasers
+        self.transition=transition
+        self.detuning=detuning
 
+
+    def __repr__(self):
+        string="*****MOT Class instance*****\n"
+        string+="***** Coil System *****\n"
+        string+=str(self.coils)
+        string+="***** Laser system *****\n"
+        for laser in self.lasers:
+            string+=str(laser)
+        string+=f'detuning = {self.detuning:.2f}\n'
+        string+="***** Atomic transition *****\n"
+        string+=str(self.transition)
+        return string
+
+    def __str__(self):
+        return self.__repr__()
+
+    @property
+    def balance(self):
+        return sum( [laser.intensity*laser.direction for laser in self.lasers] )
+
+    @property
+    def v_mat(self):
+        """
+        doppler structure matrix
+        mat = sum:  v *outer* v /norm(v)
+        """
+        return sum([np.outer(v,v)/np.linalg.norm(v) for v in [laser.direction for laser in self.lasers]  ])
+
+    @property
+    def b_mat(self):
+        """
+        magnetic structure matrix
+        mat = sum:  polz*v *outer* v /norm(v)
+        """
+        return sum([s*np.outer(v,v)/np.linalg.norm(v) for (v,s) in [(laser.direction,laser.polarization) for laser in self.lasers]   ])
+
+### Dimensionless MOT parameters
+    @property
+    def betaTot(self):
+        """
+        Sum of all intensities, in units of saturation intensity
+        Used for computed saturation effects
+        """
+        return sum([laser.intensity for laser in self.lasers])/self.transition.Isat
+
+    @property
+    def KK(self):
+        """
+        Lorentzian factor for bare detuning
+        """
+        return 1/(1+self.betaTot+4*(self.detuning/self.transition.linewidth)**2)
+
+    @property
+    def C(self):
+        """
+        useful constant.  What is the interpretation?
+        """
+        return 8*(self.detuning/self.transition.linewidth)*self.KK**2
+
+
+    @property
+    def B0(self):
+        """
+        Effective offset magnetic field caused by radiation imbalance
+        """
+
+        return -1*self.KK/(self.C*self.transition.MOT_magnetic)* np.matmul(np.linalg.inv(self.b_mat),self.balance)
+
+    def acceleration(self,r,z):
+        """
+        Calculate the MOT acceleration at position r,z
+        Fully vectorized
+        """
+        effective_magnetic=self.coils.field(r,z)+self.B0
+        return -1*self.transition.a*self.transition.MOT_magnetic*self.C*np.matmul(self.b_mat,effective_magnetic)
+
+    def view(self):
+        ar,az=self.acceleration(self.coils.rs,self.coils.zs)
+        mag=sqrt(ar**2+az**2)
+        fig=plt.figure()
+        ax=fig.add_subplot(111)
+
+        ax.streamplot(self.rs,self.zs,ar,az,density=1.5,color=mag)
+        ax.set(xlim=(self.rs.min(),self.rs.max() ), ylim=(self.zs.min(),self.zs.max()) )
+        plt.show()
