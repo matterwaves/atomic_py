@@ -106,7 +106,7 @@ class magneticCoil():
         assert np.shape(displacement) == np.shape(np.array([0,0,0]))
         self.origin+=np.array(displacement)
 
-    def field(self,x,y,z):
+    def field(self,*coords):
         """
         magnetic field due to the coil, when current I passes thru it
         r = [meters]
@@ -115,6 +115,7 @@ class magneticCoil():
         fully vectorized!
         """
         ## Make sure all inputs are arrays to avoid index issues
+        x,y,z=coords[0],coords[1],coords[2]
         if type(x) != type(np.array([])):
             x=np.array(x).astype(np.float64)
         if type(y) != type(np.array([])):
@@ -221,9 +222,12 @@ class coilSystem():
         #self.rs,self.zs=np.meshgrid(np.linspace(*self.r_range),np.linspace(*self.z_range))
         self.xs,self.ys,self.zs=np.mgrid[slice(*self.r_range),slice(*self.r_range),slice(*self.z_range)]
 
-    def view(self):
+    def view(self,fieldFunc=None ):
 
-        Bx,By,Bz=self.field(self.xs,self.ys,self.zs)
+        if fieldFunc is None:
+            fieldFunc=self.field
+        #Bx,By,Bz=self.field(self.xs,self.ys,self.zs)
+        Bx,By,Bz=fieldFunc(self.xs,self.ys,self.zs)
 
         ## Take a cross-section for viewing
         mask=self.ys==np.min(np.abs(self.ys))
@@ -379,20 +383,13 @@ class mot():
 
         return -1*self.KK/(self.C*self.transition.MOT_magnetic)* np.matmul(np.linalg.inv(self.b_mat),self.balance)
 
-    def acceleration(self,r,z):
+    def acceleration(self,*coords):
         """
-        Calculate the MOT acceleration at position r,z
+        Calculate the MOT acceleration at position coords
         Fully vectorized
         """
-        effective_magnetic=self.coils.field(r,z)+self.B0
-        return -1*self.transition.a*self.transition.MOT_magnetic*self.C*np.matmul(self.b_mat,effective_magnetic)
+        effective_magnetic=self.coils.field(*coords)+np.reshape(self.B0,(3,1,1,1))
+        return -1*self.transition.a*self.transition.MOT_magnetic*self.C*np.einsum("ij,jklm",self.b_mat,effective_magnetic)
 
     def view(self):
-        ar,az=self.acceleration(self.coils.rs,self.coils.zs)
-        mag=sqrt(ar**2+az**2)
-        fig=plt.figure()
-        ax=fig.add_subplot(111)
-
-        ax.streamplot(self.rs,self.zs,ar,az,density=1.5,color=mag)
-        ax.set(xlim=(self.rs.min(),self.rs.max() ), ylim=(self.zs.min(),self.zs.max()) )
-        plt.show()
+        self.coils.view(fieldFunc=self.acceleration)
