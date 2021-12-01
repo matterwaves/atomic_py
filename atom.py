@@ -226,6 +226,7 @@ class cesium():
         self.fine_states.append(self.P12)
 
         self.D2=transition(self.S12,self.P32,4.4786,self.mass,"D2")
+        self.D2.Isat=1.1023 ## Manually set based on steck data.  Why doesnt it work naturally?
         self.D1=transition(self.S12,self.P12,3.1822,self.mass,"D1")
 
         self.fine_states.sort(key=lambda x: x.center)

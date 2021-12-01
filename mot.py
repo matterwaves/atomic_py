@@ -313,7 +313,7 @@ class mot():
         self.coils=coils
         self.lasers=lasers
         self.transition=transition
-        self.detuning=detuning
+        self.detuning=detuning*1e6
 
 
     def __repr__(self):
@@ -333,7 +333,7 @@ class mot():
 
     @property
     def balance(self):
-        return sum( [laser.intensity*laser.direction for laser in self.lasers] )
+        return sum( [laser.intensity*laser.direction for laser in self.lasers] )/self.transition.Isat
 
     @property
     def v_mat(self):
@@ -341,7 +341,7 @@ class mot():
         doppler structure matrix
         mat = sum:  v *outer* v /norm(v)
         """
-        return sum([np.outer(v,v)/np.linalg.norm(v) for v in [laser.direction for laser in self.lasers]  ])
+        return sum([np.outer(v,v)/np.linalg.norm(v) for v in [laser.direction*laser.intensity/self.transition.Isat for laser in self.lasers]  ])
 
     @property
     def b_mat(self):
@@ -349,7 +349,7 @@ class mot():
         magnetic structure matrix
         mat = sum:  polz*v *outer* v /norm(v)
         """
-        return sum([s*np.outer(v,v)/np.linalg.norm(v) for (v,s) in [(laser.direction,laser.polarization) for laser in self.lasers]   ])
+        return sum([s*np.outer(v,v)/np.linalg.norm(v) for (v,s) in [(laser.direction*laser.intensity/self.transition.Isat,laser.polarization) for laser in self.lasers]   ])
 
 ### Dimensionless MOT parameters
     @property
@@ -374,6 +374,9 @@ class mot():
         """
         return 8*(self.detuning/self.transition.linewidth)*self.KK**2
 
+    @property
+    def netAcceleration(self):
+        return self.KK*self.transition.a*self.balance
 
     @property
     def B0(self):
@@ -393,3 +396,15 @@ class mot():
 
     def view(self):
         self.coils.view(fieldFunc=self.acceleration)
+
+    def printProperties(self):
+        print(f"Number of lasers: {len(self.lasers)}\n")
+        print(f'Radiation balance: {np.array2string(self.balance,precision=2)} Isat\n')
+        print(f'Net acceleration: {np.array2string(self.netAcceleration,precision=2)} m/s^2 ')
+        print(f'Effective offset field: {np.array2string(self.B0,precision=2)} Gauss\n')
+        print(f'doppler structure matrix: \n{np.array2string(self.v_mat,precision=2)}\n')
+        print(f'doppler force: {np.array2string(self.transition.a*self.transition.doppler*self.C*self.v_mat   ,precision=2)} \n m/s^2 per m/s')
+        print(f'magnetic structure matrix: \n{np.array2string(self.b_mat,precision=2)}\n')
+        print(f'magnetic force:\n {np.array2string( self.transition.a*self.transition.MOT_magnetic*self.C*self.b_mat, precision=2)}  m/s^2 per gauss')
+
+
