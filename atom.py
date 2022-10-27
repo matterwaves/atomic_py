@@ -218,7 +218,7 @@ class cesium():
         self.fine_states.append(self.S12)
 
         self.P32=fine_manifold(I=self.I,center=351725718.50,L=1,S=self.S,J=S(3)/2,lifetime=30.473)
-        self.P32.set_hyperfine([-339.7128,-188.4885,-12.79851,263.8906],[-0.93,0,0.37,0.56])
+        self.P32.set_hyperfine([-339.7128,-188.4885,12.79851,263.8906],[-0.93,0,0.37,0.56])
         self.fine_states.append(self.P32)
 
         self.P12=fine_manifold(I=self.I,center=335116048.807,L=1,S=S(1)/2,J=S(1)/2,lifetime=34.894)
