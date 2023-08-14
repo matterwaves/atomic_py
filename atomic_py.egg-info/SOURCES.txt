@@ -1,0 +1,7 @@
+setup.py
+atomic_py/__init__.py
+atomic_py/atom.py
+atomic_py.egg-info/PKG-INFO
+atomic_py.egg-info/SOURCES.txt
+atomic_py.egg-info/dependency_links.txt
+atomic_py.egg-info/top_level.txt
